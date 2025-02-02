@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: headlamp
+  namespace: kube-system
+spec:
+  type: NodePort
+  ports:
+    - port: 4466
+      targetPort: 4466
+      protocol: TCP
+  selector:
+    app: headlamp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: headlamp
+  name: headlamp
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: headlamp
+  template:
+    metadata:
+      labels:
+        app: headlamp
+    spec:
+      containers:
+      - command:
+        - /headlamp/headlamp-server
+        - -html-static-dir
+        - /headlamp/frontend
+        - -in-cluster
+        - -plugins-dir=/headlamp/plugins
+        image: ghcr.io/headlamp-k8s/headlamp:f979bf5e
+        name: headlamp
+        ports:
+        - containerPort: 4466
+        resources: {}
+status: {}

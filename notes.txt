@@ -1,0 +1,3 @@
+HEADLAMP_BACKEND_TOKEN=$(kubectl get secret headlamp-token -n kube-system -o jsonpath='{.data.token}' | base64 -d) 
+
+kubectl -n kube-system create token headlamp-admin --duration=87600h
