@@ -34,6 +34,9 @@ const (
 	InCluster
 )
 
+// MaxDNSLabelLength is the maximum length for a DNS label according to RFC 1123
+const MaxDNSLabelLength = 63
+
 // Context contains all information related to a kubernetes context.
 type Context struct {
 	Name        string                 `json:"name"`
@@ -307,9 +310,14 @@ func (c *Context) SetupProxy() error {
 		roundTripper, err := makeTransportFor(restConf)
 		if err == nil {
 			proxy.Transport = roundTripper
+		} else{
+			logger.Log(logger.LevelError, map[string]string{"error": err.Error()}, nil, "Error setting up proxy")
 		}
-	}
+	} else {
+		// print err
+		logger.Log(logger.LevelError, map[string]string{"error": err.Error()}, nil, "Error setting up proxy")
 
+	}
 	c.proxy = proxy
 
 	logger.Log(logger.LevelInfo, map[string]string{"context": c.Name, "clusterURL": c.Cluster.Server},
@@ -794,9 +802,6 @@ func convertToContext(contextName string, clientConfig *api.Config, source int, 
 
 	authInfo := clientConfig.AuthInfos[context.AuthInfo]
 
-	// Make contextName DNS friendly.
-	contextName = makeDNSFriendly(contextName)
-
 	newContext := Context{
 		Name:        contextName,
 		KubeContext: context,
@@ -829,9 +834,6 @@ func LoadContextsFromAPIConfig(config *api.Config, skipProxySetup bool) ([]Conte
 
 		// Note: nil authInfo is valid as authInfo can be provided by token.
 		authInfo := config.AuthInfos[context.AuthInfo]
-
-		// Make contextName DNS friendly.
-		contextName = makeDNSFriendly(contextName)
 
 		context := Context{
 			Name:        contextName,
@@ -934,12 +936,4 @@ func LoadAndStoreKubeConfigs(kubeConfigStore ContextStore, kubeConfigs string, s
 	}
 
 	return errors.Join(errs...)
-}
-
-// makeDNSFriendly converts a string to a DNS-friendly format.
-func makeDNSFriendly(name string) string {
-	name = strings.ReplaceAll(name, "/", "--")
-	name = strings.ReplaceAll(name, " ", "__")
-
-	return name
 }

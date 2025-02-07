@@ -111,6 +111,117 @@ const enum Step {
   Success,
 }
 
+// Maximum length for DNS labels according to RFC 1123
+const MAX_DNS_LABEL_LENGTH = 63;
+
+// Validates a context name according to DNS label rules and cloud provider formats
+const validateContextName = (name: string): { isValid: boolean; message?: string } => {
+  if (!name) {
+    return { isValid: false, message: 'Context name cannot be empty' };
+  }
+
+  // Special handling for GKE format
+  if (name.startsWith('gke_') && name.split('_').length >= 4) {
+    const gkeRegex = /^gke_[a-z0-9-]+_[a-z0-9-]+_[a-z0-9-]+$/;
+    if (gkeRegex.test(name)) {
+      return { isValid: true };
+    }
+  }
+
+  // Convert to DNS-friendly format and validate
+  const friendlyName = makeDNSFriendly(name);
+
+  if (friendlyName.length > MAX_DNS_LABEL_LENGTH) {
+    return {
+      isValid: false,
+      message: `Context name must be ${MAX_DNS_LABEL_LENGTH} characters or less`,
+    };
+  }
+
+  // Check for valid DNS label format
+  const validDNSLabel = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
+  if (!validDNSLabel.test(friendlyName)) {
+    return {
+      isValid: false,
+      message:
+        'Context name must contain only lowercase letters, numbers, and hyphens, and must start and end with a letter or number',
+    };
+  }
+
+  return { isValid: true };
+};
+
+// Helper to convert a string to DNS-friendly format (matching backend implementation)
+const makeDNSFriendly = (name: string): string => {
+  if (!name) return 'unnamed-context';
+
+  // Special handling for GKE format
+  if (name.startsWith('gke_') && name.split('_').length >= 4) {
+    const gkeRegex = /^gke_[a-z0-9-]+_[a-z0-9-]+_[a-z0-9-]+$/;
+    if (gkeRegex.test(name)) {
+      return name;
+    }
+  }
+
+  // Handle cloud provider formats and special characters
+  const replacements: { [key: string]: string } = {
+    '/': '-', // Path separator (AWS ARN)
+    ' ': '__', // Spaces (human readability)
+    ':': '-', // ARN separator (AWS)
+    '=': '-eq-', // IAM path character
+    '+': '-plus-', // IAM path character
+    ',': '-', // IAM path character
+    '@': '-at-', // IAM path character
+    '\\': '-', // Windows path separator
+    '(': '-', // AKS allowed character
+    ')': '-', // AKS allowed character
+    '*': '-star-', // Wildcard character in ARNs
+    '.': '-', // Convert dots to hyphens
+  };
+
+  let result = name.toLowerCase();
+
+  // Apply character replacements
+  Object.entries(replacements).forEach(([old, replacement]) => {
+    result = result.split(old).join(replacement);
+  });
+
+  // Replace any remaining non-alphanumeric characters with hyphens
+  result = result.replace(/[^a-z0-9-]/g, '-');
+
+  // Remove consecutive hyphens
+  result = result.replace(/-+/g, '-');
+
+  // Trim hyphens from start and end
+  result = result.replace(/^-+|-+$/g, '');
+
+  // Ensure the name starts and ends with alphanumeric characters
+  if (!result || !/^[a-z0-9]/.test(result)) {
+    result = 'x-' + result;
+  }
+  if (!/[a-z0-9]$/.test(result)) {
+    result = result + '-x';
+  }
+
+  // Truncate if too long, preserving meaningful parts
+  if (result.length > MAX_DNS_LABEL_LENGTH) {
+    if (result.includes('-')) {
+      const parts = result.split('-');
+      const targetLen = Math.floor((MAX_DNS_LABEL_LENGTH - (parts.length - 1)) / parts.length);
+      if (targetLen >= 1) {
+        result = parts.map(part => part.slice(0, targetLen)).join('-');
+      } else {
+        // If we can't fit all parts, take first and last
+        result = `${parts[0].slice(0, 1)}-${parts[parts.length - 1].slice(0, 1)}`;
+      }
+    } else {
+      result = result.slice(0, MAX_DNS_LABEL_LENGTH);
+    }
+  }
+
+  return result || 'unnamed-context';
+};
+
 function KubeConfigLoader() {
   const history = useHistory();
   const [state, setState] = useState(Step.LoadKubeConfig);
@@ -123,6 +234,7 @@ function KubeConfigLoader() {
   });
   const [selectedClusters, setSelectedClusters] = useState<string[]>([]);
   const configuredClusters = useClustersConf(); // Get already configured clusters
+  const [contextNameErrors, setContextNameErrors] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
     if (fileContent.contexts.length > 0) {
@@ -212,17 +324,31 @@ function KubeConfigLoader() {
     multiple: false,
   });
 
-  function handleCheckboxChange(event: React.ChangeEvent<HTMLInputElement>) {
-    if (!event.target.checked) {
-      // remove from selected clusters
-      setSelectedClusters(selectedClusters =>
-        selectedClusters.filter(cluster => cluster !== event.target.name)
-      );
-    } else {
-      // add to selected clusters
-      setSelectedClusters(selectedClusters => [...selectedClusters, event.target.name]);
+  const handleContextSelect = (event: React.ChangeEvent<HTMLInputElement>, contextName: string) => {
+    const validation = validateContextName(contextName);
+
+    if (!validation.isValid) {
+      setContextNameErrors(prev => ({
+        ...prev,
+        [contextName]: validation.message || 'Invalid context name',
+      }));
+      // Optionally prevent selection of invalid contexts
+      return;
     }
-  }
+
+    setContextNameErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[contextName];
+      return newErrors;
+    });
+
+    const checked = event.target.checked;
+    if (checked) {
+      setSelectedClusters(prev => [...prev, contextName]);
+    } else {
+      setSelectedClusters(prev => prev.filter(name => name !== contextName));
+    }
+  };
 
   function renderSwitch() {
     switch (state) {
@@ -286,23 +412,42 @@ function KubeConfigLoader() {
                       width: '100%',
                     }}
                   >
-                    {fileContent.contexts.map(context => {
-                      return (
-                        <FormControlLabel
-                          key={context.name}
-                          control={
-                            <Checkbox
-                              value={context.name}
-                              name={context.name}
-                              onChange={handleCheckboxChange}
-                              color="primary"
-                              checked={selectedClusters.includes(context.name)}
-                            />
-                          }
-                          label={context.name}
-                        />
-                      );
-                    })}
+                    {fileContent.contexts.map(context => (
+                      <FormControlLabel
+                        key={context.name}
+                        control={
+                          <Checkbox
+                            value={context.name}
+                            name={context.name}
+                            color="primary"
+                            checked={selectedClusters.includes(context.name)}
+                            onChange={e => handleContextSelect(e, context.name)}
+                          />
+                        }
+                        label={
+                          <Box>
+                            <Typography>
+                              {context.name}
+                              {context.name !== makeDNSFriendly(context.name) && (
+                                <Typography
+                                  variant="caption"
+                                  color="textSecondary"
+                                  component="span"
+                                >
+                                  {' '}
+                                  (will be saved as: {makeDNSFriendly(context.name)})
+                                </Typography>
+                              )}
+                            </Typography>
+                            {contextNameErrors[context.name] && (
+                              <Typography color="error" variant="caption">
+                                {contextNameErrors[context.name]}
+                              </Typography>
+                            )}
+                          </Box>
+                        }
+                      />
+                    ))}
                   </FormControl>
                   <Grid
                     container
