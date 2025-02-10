@@ -1,9 +1,16 @@
+/**
+ * This plugin shows how to add a custom overview chart on the overview page.
+ */
 import { K8s, registerOverviewChartsProcessor } from '@kinvolk/headlamp-plugin/lib';
 import { TileChart } from '@kinvolk/headlamp-plugin/lib/CommonComponents';
 import { Box, Paper } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import React from 'react';
 
+/**
+ * PodFailureChart shows the percentage of failing pods.
+ * Failing pods are those in 'Failed' or 'Unknown' states.
+ */
 function PodFailureChart() {
   const [pods, error] = K8s.ResourceClasses.Pod.useList();
   const theme = useTheme();
