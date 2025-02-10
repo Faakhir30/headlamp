@@ -1,0 +1,5 @@
+plugins:
+  - name: app-catalog
+    source: https://artifacthub.io/packages/headlamp/test-123/appcatalog_headlamp_plugin
+    version: 0.5.0
+    config: {}

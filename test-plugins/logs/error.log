@@ -1,0 +1,2 @@
+{"component":"BatchInstaller","level":"error","message":"Invalid URL. Please provide a valid URL from ArtifactHub.","plugin":"app-catalog","service":"headlamp-plugin","timestamp":"2025-02-09T14:27:42.324Z"}
+{"component":"BatchInstaller","level":"error","message":"Cannot read properties of undefined (reading 'name')","plugin":"app-catalog","service":"headlamp-plugin","timestamp":"2025-02-09T14:27:42.336Z"}

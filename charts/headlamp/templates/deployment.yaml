@@ -39,6 +39,9 @@ spec:
       {{- with .Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
+        {{- if .Values.pluginInstaller.config.enabled }}
+        checksum/plugin-config: {{ include (print $.Template.BasePath "/configmap-plugins.yaml") . | sha256sum }}
+        {{- end }}
       {{- end }}
       labels:
         {{- include "headlamp.selectorLabels" . | nindent 8 }}
@@ -50,133 +53,122 @@ spec:
       serviceAccountName: {{ include "headlamp.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- with .Values.initContainers }}
       initContainers:
-        {{ toYaml . | nindent 8 }}
-      {{- end }}
+        {{- if .Values.pluginInstaller.config.enabled }}
+        - name: plugin-installer
+          image: "{{ .Values.pluginInstaller.image.repository }}:{{ .Values.pluginInstaller.image.tag }}"
+          imagePullPolicy: {{ .Values.pluginInstaller.image.pullPolicy }}
+          env:
+            - name: PLUGINS_DIR
+              value: "/headlamp/plugins"
+            - name: CONFIG_DIR
+              value: "/config"
+            - name: LOG_LEVEL
+              value: "info"
+          volumeMounts:
+            - name: plugins
+              mountPath: /headlamp/plugins
+            - name: plugin-config
+              mountPath: /config
+              readOnly: true
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+        {{- end }}
+        {{- with .Values.initContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.registry}}/{{ .Values.image.repository }}:{{ .Values.image.tag | default (printf "v%s" .Chart.AppVersion) }}"
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          {{ if or $oidc .Values.env }}
-          {{- if $oidc.externalSecret.enabled }}
-          # Check if externalSecret is enabled
-          envFrom:
-          - secretRef:
-              name: {{ $oidc.externalSecret.name }}
-          {{- if .Values.env }}
           env:
-            {{- toYaml .Values.env | nindent 12 }}
-          {{- end }}
-          {{- else }}
-          env:
-            {{- if $oidc.secret.create }}
-            {{- if $oidc.clientID }}
+            {{- if .Values.config.baseURL }}
+            - name: BASE_URL
+              value: {{ .Values.config.baseURL | quote }}
+            {{- end }}
+            {{- if .Values.config.oidc.secret.create }}
             - name: OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: {{ $oidc.secret.name }}
+                  name: {{ .Values.config.oidc.secret.name }}
                   key: clientID
-            {{- end }}
-            {{- if $oidc.clientSecret }}
             - name: OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ $oidc.secret.name }}
+                  name: {{ .Values.config.oidc.secret.name }}
                   key: clientSecret
-            {{- end }}
-            {{- if $oidc.issuerURL }}
             - name: OIDC_ISSUER_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ $oidc.secret.name }}
+                  name: {{ .Values.config.oidc.secret.name }}
                   key: issuerURL
-            {{- end }}
-            {{- if $oidc.scopes }}
             - name: OIDC_SCOPES
               valueFrom:
                 secretKeyRef:
-                  name: {{ $oidc.secret.name }}
+                  name: {{ .Values.config.oidc.secret.name }}
                   key: scopes
-            {{- end }}
-            {{- else }}
-            {{- if $oidc.clientID }}
+            {{- else if .Values.config.oidc.externalSecret.enabled }}
             - name: OIDC_CLIENT_ID
-              value: {{ $oidc.clientID }}
-            {{- end }}
-            {{- if $oidc.clientSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.oidc.externalSecret.name }}
+                  key: clientID
             - name: OIDC_CLIENT_SECRET
-              value: {{ $oidc.clientSecret }}
-            {{- end }}
-            {{- if $oidc.issuerURL }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.oidc.externalSecret.name }}
+                  key: clientSecret
             - name: OIDC_ISSUER_URL
-              value: {{ $oidc.issuerURL }}
-            {{- end }}
-            {{- if $oidc.scopes }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.oidc.externalSecret.name }}
+                  key: issuerURL
             - name: OIDC_SCOPES
-              value: {{ $oidc.scopes }}
-            {{- end }}
-            {{- end }}
-            {{- if .Values.env }}
-            {{- toYaml .Values.env | nindent 12 }}
-            {{- end }}
-          {{- end }}
-          {{- end }}
-          args:
-            - "-in-cluster"
-            {{- with .Values.config.pluginsDir}}
-            - "-plugins-dir={{ . }}"
-            {{- end }}
-            {{- if not $oidc.externalSecret.enabled}}
-            # Check if externalSecret is disabled
-            {{- if or (ne $oidc.clientID "") (ne $clientID "") }}
-            # Check if clientID is non empty either from env or oidc.config
-            - "-oidc-client-id=$(OIDC_CLIENT_ID)"
-            {{- end }}
-            {{- if or (ne $oidc.clientSecret "") (ne $clientSecret "") }}
-            # Check if clientSecret is non empty either from env or oidc.config
-            - "-oidc-client-secret=$(OIDC_CLIENT_SECRET)"
-            {{- end }}
-            {{- if or (ne $oidc.issuerURL "") (ne $issuerURL "") }}
-            # Check if issuerURL is non empty either from env or oidc.config
-            - "-oidc-idp-issuer-url=$(OIDC_ISSUER_URL)"
-            {{- end }}
-            {{- if or (ne $oidc.scopes "") (ne $scopes "") }}
-            # Check if scopes are non empty either from env or oidc.config
-            - "-oidc-scopes=$(OIDC_SCOPES)"
-            {{- end }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.oidc.externalSecret.name }}
+                  key: scopes
             {{- else }}
-            - "-oidc-client-id=$(OIDC_CLIENT_ID)"
-            - "-oidc-client-secret=$(OIDC_CLIENT_SECRET)"
-            - "-oidc-idp-issuer-url=$(OIDC_ISSUER_URL)"
-            - "-oidc-scopes=$(OIDC_SCOPES)"
+            {{- if .Values.config.oidc.clientID }}
+            - name: OIDC_CLIENT_ID
+              value: {{ .Values.config.oidc.clientID | quote }}
             {{- end }}
-            {{- with .Values.config.baseURL }}
-            - "-base-url={{ . }}"
+            {{- if .Values.config.oidc.clientSecret }}
+            - name: OIDC_CLIENT_SECRET
+              value: {{ .Values.config.oidc.clientSecret | quote }}
             {{- end }}
-            {{- with .Values.config.extraArgs }}
-              {{- toYaml . | nindent 12 }}
+            {{- if .Values.config.oidc.issuerURL }}
+            - name: OIDC_ISSUER_URL
+              value: {{ .Values.config.oidc.issuerURL | quote }}
+            {{- end }}
+            {{- if .Values.config.oidc.scopes }}
+            - name: OIDC_SCOPES
+              value: {{ .Values.config.oidc.scopes | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.config.pluginsDir }}
+            - name: PLUGINS_DIR
+              value: {{ .Values.config.pluginsDir | quote }}
+            {{- end }}
+            {{- with .Values.env }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           ports:
             - name: http
               containerPort: 4466
               protocol: TCP
-          livenessProbe:
-            httpGet:
-              path: "{{ .Values.config.baseURL }}/"
-              port: http
-          readinessProbe:
-            httpGet:
-              path: "{{ .Values.config.baseURL }}/"
-              port: http
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
           {{- with .Values.volumeMounts }}
           volumeMounts:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -187,9 +179,5 @@ spec:
       {{- end }}
       {{- with .Values.tolerations }}
       tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.volumes}}
-      volumes:
         {{- toYaml . | nindent 8 }}
       {{- end }}

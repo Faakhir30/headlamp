@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @ts-check
+//// @ts-check
 'use strict';
 
 const webpack = require('webpack');
@@ -18,6 +18,8 @@ const headlampPluginPkg = require('../package.json');
 const PluginManager = require('../plugin-management/plugin-management').PluginManager;
 const { table } = require('table');
 const tar = require('tar');
+const logger = require('../src/logger');
+const BatchInstaller = require('../src/batch-installer');
 
 /**
  * Creates a new plugin folder.
@@ -1348,118 +1350,67 @@ yargs(process.argv.slice(2))
     }
   )
   .command(
-    'install <URL>',
-    'Install a plugin from the Artiface Hub URL',
+    'install',
+    'Install plugins',
     yargs => {
-      yargs
-        .positional('URL', {
-          describe: 'URL of the plugin to install',
+      return yargs
+        .option('config', {
+          alias: 'c',
+          describe: 'Path to plugin configuration file',
           type: 'string',
         })
-        .option('folderName', {
-          describe: 'Name of the folder to install the plugin into',
+        .option('plugins-dir', {
+          alias: 'd',
+          describe: 'Directory to install plugins',
           type: 'string',
+          default: process.env.PLUGINS_DIR || '/headlamp/plugins',
         })
-        .option('headlampVersion', {
-          describe: 'Version of headlamp to install the plugin into',
+        .option('source', {
+          alias: 's',
+          describe: 'Plugin source URL (for single plugin installation)',
           type: 'string',
-        })
-        .option('quiet', {
-          alias: 'q',
-          describe: 'Do not print logs',
-          type: 'boolean',
         });
     },
     async argv => {
-      const { URL, folderName, headlampVersion, quiet } = argv;
-      const progressCallback = quiet
-        ? null
-        : data => {
-            if (data.type === 'error' || data.type === 'success') {
-              console.error(data.type, ':', data.message);
-            }
-          }; // Use console.log for logs if not in quiet mode
       try {
-        await PluginManager.install(URL, folderName, headlampVersion, progressCallback);
-      } catch (e) {
-        console.error(e.message);
-        process.exit(1); // Exit with error status
-      }
-    }
-  )
-  .command(
-    'update <pluginName>',
-    'Update a plugin to the latest version',
-    yargs => {
-      yargs
-        .positional('pluginName', {
-          describe: 'Name of the plugin to update',
-          type: 'string',
-        })
-        .positional('folderName', {
-          describe: 'Name of the folder that contains the plugin',
-          type: 'string',
-        })
-        .positional('headlampVersion', {
-          describe: 'Version of headlamp to update the plugin into',
-          type: 'string',
-        })
-        .option('quiet', {
-          alias: 'q',
-          describe: 'Do not print logs',
-          type: 'boolean',
+        const installer = new BatchInstaller(argv.pluginsDir);
+
+        if (argv.config) {
+          // Batch installation from config
+          logger.info('Starting batch plugin installation', { configPath: argv.config });
+          const results = await installer.installFromConfig(argv.config);
+
+          // Log results summary
+          const successful = results.filter(r => r.status === 'success').length;
+          const failed = results.filter(r => r.status === 'error').length;
+
+          logger.info('Batch installation completed', {
+            total: results.length,
+            successful,
+            failed,
+          });
+
+          // Exit with error if any plugins failed to install
+          if (failed > 0) {
+            process.exit(1);
+          }
+        } else if (argv.source) {
+          // Single plugin installation
+          logger.info('Installing single plugin', { source: argv.source });
+          await installer.installPlugin({
+            name: path.basename(argv.source, '.tar.gz'),
+            source: argv.source,
+          });
+        } else {
+          logger.error('Either --config or --source must be specified');
+          process.exit(1);
+        }
+      } catch (error) {
+        logger.error('Installation failed', {
+          error: error.message,
+          stack: error.stack,
         });
-    },
-    async argv => {
-      const { pluginName, folderName, headlampVersion, quiet } = argv;
-      const progressCallback = quiet
-        ? null
-        : data => {
-            if (data.type === 'error' || data.type === 'success') {
-              console.error(data.type, ':', data.message);
-            }
-          }; // Use console.log for logs if not in quiet mode
-      try {
-        await PluginManager.update(pluginName, folderName, headlampVersion, progressCallback);
-      } catch (e) {
-        console.error(e.message);
-        process.exit(1); // Exit with error status
-      }
-    }
-  )
-  .command(
-    'uninstall <pluginName>',
-    'Uninstall a plugin',
-    yargs => {
-      yargs
-        .positional('pluginName', {
-          describe: 'Name of the plugin to uninstall',
-          type: 'string',
-        })
-        .option('folderName', {
-          describe: 'Name of the folder that contains the plugin',
-          type: 'string',
-        })
-        .option('quiet', {
-          alias: 'q',
-          describe: 'Do not print logs',
-          type: 'boolean',
-        });
-    },
-    async argv => {
-      const { pluginName, folderName, quiet } = argv;
-      const progressCallback = quiet
-        ? null
-        : data => {
-            if (data.type === 'error' || data.type === 'success') {
-              console.error(data.type, ':', data.message);
-            }
-          }; // Use console.log for logs if not in quiet mode
-      try {
-        await PluginManager.uninstall(pluginName, folderName, progressCallback);
-      } catch (e) {
-        console.error(e.message);
-        process.exit(1); // Exit with error status
+        process.exit(1);
       }
     }
   )
@@ -1467,45 +1418,30 @@ yargs(process.argv.slice(2))
     'list',
     'List installed plugins',
     yargs => {
-      yargs
-        .option('folderName', {
-          describe: 'Name of the folder that contains the plugins',
-          type: 'string',
-        })
-        .option('json', {
-          alias: 'j',
-          describe: 'Output in JSON format',
-          type: 'boolean',
-        });
+      return yargs.option('plugins-dir', {
+        alias: 'd',
+        describe: 'Plugins directory to list',
+        type: 'string',
+        default: process.env.PLUGINS_DIR || '/headlamp/plugins',
+      });
     },
     async argv => {
-      const { folderName, json } = argv;
-      const progressCallback = data => {
-        if (json) {
-          console.log(JSON.stringify(data.data));
-        } else {
-          // display table
-          const rows = [['Name', 'Version', 'Folder Name', 'Repo', 'Author']];
-          data.data.forEach(plugin => {
-            rows.push([
-              plugin.pluginName,
-              plugin.pluginVersion,
-              plugin.folderName,
-              plugin.repoName,
-              plugin.author,
-            ]);
-          });
-          console.log(table(rows));
-        }
-      };
       try {
-        await PluginManager.list(folderName, progressCallback);
-      } catch (e) {
-        console.error(e.message);
-        process.exit(1); // Exit with error status
+        const installer = new BatchInstaller(argv.pluginsDir);
+        const plugins = installer.pluginManager.list(argv.pluginsDir);
+
+        logger.info('Installed plugins:', {
+          count: plugins.length,
+          plugins: plugins,
+        });
+      } catch (error) {
+        logger.error('Failed to list plugins', {
+          error: error.message,
+          stack: error.stack,
+        });
+        process.exit(1);
       }
     }
   )
-  .demandCommand(1, '')
-  .strict()
+  .demandCommand(1, 'You must specify a command')
   .help().argv;
