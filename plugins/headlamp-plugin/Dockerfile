@@ -29,21 +29,6 @@ COPY config ./config
 COPY plugin-management ./plugin-management
 COPY src ./src
 
-# Create post-install script
-RUN echo '#!/bin/sh\n\
-if [ -f "/config/plugins.yaml" ]; then\n\
-  PLUGINS=$(cat /config/plugins.yaml | grep "postInstall:" -A 10 | grep -v "postInstall:" | grep "^[[:space:]]*-" | sed "s/^[[:space:]]*-[[:space:]]*//g" | tr -d "\"")\n\
-  if [ ! -z "$PLUGINS" ]; then\n\
-    echo "Running post-install scripts..."\n\
-    echo "$PLUGINS" | while read -r cmd; do\n\
-      if [ ! -z "$cmd" ]; then\n\
-        echo "Executing: $cmd"\n\
-        sh -c "$cmd"\n\
-      fi\n\
-    done\n\
-  fi\n\
-fi' > /app/post-install.sh && chmod +x /app/post-install.sh
-
 # Stage 2: Production Stage
 FROM node:20-alpine3.19
 
@@ -77,4 +62,4 @@ VOLUME ["/headlamp/plugins", "/config", "/logs"]
 ENTRYPOINT ["/sbin/tini", "--"]
 
 # Set the default command to run the plugin installer and post-install script
-CMD ["sh", "-c", "node bin/headlamp-plugin.js install --config /config/plugins.yaml && /app/post-install.sh"]
+CMD ["sh", "-c", "node bin/headlamp-plugin.js install --config /config/plugins.yaml && cd /headlamp/plugins/app-catalog && mv appcatalog_headlamp_plugin/* . && rmdir appcatalog_headlamp_plugin"]
