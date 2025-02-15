@@ -15,6 +15,31 @@ image:
   # -- Container image tag, If "" uses appVersion in Chart.yaml
   tag: ""
 
+pluginInstaller:
+  # -- Container image for plugin installer
+  image:
+    registry: ghcr.io
+    repository: headlamp-k8s/plugin-installer
+    tag: latest
+    pullPolicy: IfNotPresent
+  
+  # -- Plugin configuration
+  config:
+    # -- Create ConfigMap for plugin configuration
+    enabled: false
+    # -- Name of the ConfigMap to use
+    name: headlamp-plugins-config
+    # -- Plugin configuration content
+    content: {}
+    # Example:
+    # content:
+    #   proxy-urls:
+    #     - "https://artifacthub.io/*"
+    #   plugins:
+    #     - name: test-app-catalog
+    #       source: https://artifacthub.io/packages/headlamp/test-123/appcatalog_headlamp_plugin
+    #       version: 0.5.0
+
 # -- An optional list of references to secrets in the same namespace to use for pulling any of the images used
 imagePullSecrets: []
 # -- Overrides the name of the chart
@@ -144,10 +169,20 @@ service:
   nodePort: null
 
 # -- Headlamp containers volume mounts
-volumeMounts: []
+volumeMounts:
+  - name: plugins
+    mountPath: /headlamp/plugins
+  - name: plugin-config
+    mountPath: /config
+    readOnly: true
 
 # -- Headlamp pod's volumes
-volumes: []
+volumes:
+  - name: plugins
+    emptyDir: {}
+  - name: plugin-config
+    configMap:
+      name: headlamp-plugins-config
 
 persistentVolumeClaim:
   # -- Enable Persistent Volume Claim
