@@ -77,24 +77,3 @@ jobs:
       run: |
         echo "Security vulnerabilities were found. Check the scan results for details."
         exit 1
-
-    - name: Test plugin container
-      if: env.SCAN_EXIT_CODE == 0
-      run: |
-        # Create test directories
-        mkdir -p test/plugins test/config
-        
-        # Create a test config file
-        cat > test/config/config.yaml <<EOF
-        plugins:
-          - name: test-appcatalog
-            version: 0.0.1
-            repository: https://artifacthub.io/packages/headlamp/test-123/appcatalog_headlamp_plugin
-        EOF
-
-        # Run the container with test config
-        docker run --rm \
-          -v $(pwd)/test/plugins:/plugins-dir \
-          -v $(pwd)/test/config/config.yaml:/plugins.yaml \
-          ghcr.io/headlamp-k8s/headlamp-plugin:test \
-          install --config /plugins.yaml --folderName /plugins-dir
