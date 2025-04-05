@@ -36,16 +36,22 @@ jobs:
         tags: ghcr.io/headlamp-k8s/headlamp-plugin:test
         cache-from: type=gha
         cache-to: type=gha,mode=max
-        # Add output for local image scanning
-        outputs: type=docker,dest=/tmp/headlamp-plugin.tar
+        load: true
 
+    # Setup Trivy
+    - name: Install Trivy
+      run: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.47.0
+
+    # Run vulnerability scan
     - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@0.24.0
-      with:
-        input: /tmp/headlamp-plugin.tar
-        format: "table"
-        severity: "CRITICAL,HIGH"
-        output: trivy-result.txt
+      run: |
+        # Run the scan and store output
+        trivy image \
+          ghcr.io/headlamp-k8s/headlamp-plugin:test \
+          --format table \
+          --output trivy-result.txt \
+          --severity HIGH,CRITICAL
 
     - name: Check Trivy result file
       run: cat trivy-result.txt
