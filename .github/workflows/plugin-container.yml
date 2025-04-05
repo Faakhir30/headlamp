@@ -67,28 +67,28 @@ jobs:
     - name: Comment PR with Trivy scan results
       uses: marocchino/sticky-pull-request-comment@v2
       with:
-        GITHUB_TOKEN: ${{ secrets.PAT }}
+        GITHUB_TOKEN: ${{ secrets.PAT }} # GHA token for bot
         path: formatted-trivy-result.md
 
     - name: Clean up Trivy result files
       run: rm -f trivy-result.txt formatted-trivy-result.md
 
-    # - name: Test plugin container
-    #   run: |
-    #     # Create test directories
-    #     mkdir -p test/plugins test/config
+    - name: Test plugin container
+      run: |
+        # Create test directories
+        mkdir -p test/plugins test/config
         
-    #     # Create a test config file
-    #     cat > test/config/config.yaml <<EOF
-    #     plugins:
-    #       - name: test-appcatalog
-    #         version: 0.0.1
-    #         repository: https://artifacthub.io/packages/headlamp/test-123/appcatalog_headlamp_plugin
-    #     EOF
+        # Create a test config file
+        cat > test/config/config.yaml <<EOF
+        plugins:
+          - name: test-appcatalog
+            version: 0.0.1
+            repository: https://artifacthub.io/packages/headlamp/test-123/appcatalog_headlamp_plugin
+        EOF
 
-    #     # Run the container with test config
-    #     docker run --rm \
-    #       -v $(pwd)/test/plugins:/plugins-dir \
-    #       -v $(pwd)/test/config/config.yaml:/plugins.yaml \
-    #       ghcr.io/headlamp-k8s/headlamp-plugin:test \
-    #       install --config /plugins.yaml --folderName /plugins-dir
+        # Run the container with test config
+        docker run --rm \
+          -v $(pwd)/test/plugins:/plugins-dir \
+          -v $(pwd)/test/config/config.yaml:/plugins.yaml \
+          ghcr.io/headlamp-k8s/headlamp-plugin:test \
+          install https://artifacthub.io/packages/headlamp/test-123/appcatalog_headlamp_plugin
