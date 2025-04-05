@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - main
+      - test_workflow
       - rc-*
       - testing-rc-*
     paths:
@@ -39,23 +40,46 @@ jobs:
         # Add output for local image scanning
         outputs: type=docker,dest=/tmp/headlamp-plugin.tar
 
+    # Setup Trivy
+    - name: Install Trivy
+      run: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.47.0
+
+    # Run vulnerability scan
     - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        input: /tmp/headlamp-plugin.tar
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-        severity: 'CRITICAL,HIGH'
-        exit-code: '1'
-        ignore-unfixed: true
+      continue-on-error: true
+      id: scan
+      run: |
+        # First update Trivy DB
+        trivy image --download-db-only
+        
+        # Run the scan and store output
+        set +e
+        trivy image \
+          --input /tmp/headlamp-plugin.tar \
+          --format sarif \
+          --output trivy-results.sarif \
+          --severity HIGH,CRITICAL \
+          --ignore-unfixed \
+          --exit-code 1
+        
+        echo "SCAN_EXIT_CODE=$?" >> $GITHUB_ENV
+        set -e
 
     - name: Upload Trivy scan results to GitHub Security tab
+      if: always() && steps.scan.outcome == 'success'
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
       with:
         sarif_file: 'trivy-results.sarif'
 
+    - name: Check scan results
+      if: env.SCAN_EXIT_CODE == 1
+      run: |
+        echo "Security vulnerabilities were found. Check the scan results for details."
+        exit 1
+
     - name: Test plugin container
+      if: env.SCAN_EXIT_CODE == 0
       run: |
         # Create test directories
         mkdir -p test/plugins test/config
