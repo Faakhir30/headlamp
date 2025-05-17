@@ -173,6 +173,9 @@ spec:
             {{- if .Values.config.inCluster }}
             - "-in-cluster"
             {{- end }}
+            {{- if .Values.config.watchPlugins }}
+            - "-watch-plugins-changes"
+            {{- end }}
             {{- with .Values.config.pluginsDir}}
             - "-plugins-dir={{ . }}"
             {{- end }}
@@ -218,7 +221,9 @@ spec:
             - "-base-url={{ . }}"
             {{- end }}
             {{- with .Values.config.extraArgs }}
-              {{- toYaml . | nindent 12 }}
+            {{- range . }}
+            - {{ . }}
+            {{- end }}
             {{- end }}
           ports:
             - name: http
@@ -234,10 +239,39 @@ spec:
               port: http
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- with .Values.volumeMounts }}
           volumeMounts:
+            {{- if .Values.plugins.enabled }}
+            - name: plugins-dir
+              mountPath: {{ .Values.config.pluginsDir }}
+            {{- end }}
+            {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
-          {{- end }}
+            {{- end }}
+        {{- if .Values.plugins.enabled }}
+        - name: headlamp-plugin
+          image: {{ .Values.plugins.sidecar.baseImage }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Installing headlamp-plugin..."
+              npm install -g @faakhir/headlamp-plugin@{{ .Values.plugins.sidecar.version }} --verbose --prefer-offline --no-audit
+              while true; do
+                echo "Installing plugins from config..."
+                if [ -f "/config/{{ .Values.plugins.configFile }}" ]; then
+                  echo "Installing plugins from config..."
+                  cat /config/{{ .Values.plugins.configFile }}
+                  headlamp-plugin install --config /config/{{ .Values.plugins.configFile }} --folderName {{ .Values.config.pluginsDir }}
+                fi
+                sleep 60
+              done
+          volumeMounts:
+            - name: plugins-dir
+              mountPath: {{ .Values.config.pluginsDir }}
+            - name: plugin-config
+              mountPath: /config
+          resources:
+            {{- toYaml .Values.plugins.sidecar.resources | nindent 12 }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -250,7 +284,14 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.volumes}}
       volumes:
+        {{- if .Values.plugins.enabled }}
+        - name: plugins-dir
+          emptyDir: {}
+        - name: plugin-config
+          configMap:
+            name: {{ include "headlamp.fullname" . }}-plugin-config
+        {{- end }}
+        {{- with .Values.volumes}}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}

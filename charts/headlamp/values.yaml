@@ -13,7 +13,7 @@ image:
   # -- Image pull policy. One of Always, Never, IfNotPresent
   pullPolicy: IfNotPresent
   # -- Container image tag, If "" uses appVersion in Chart.yaml
-  tag: ""
+  tag: "latest"
 
 # -- An optional list of references to secrets in the same namespace to use for pulling any of the images used
 imagePullSecrets: []
@@ -91,6 +91,7 @@ config:
       name: ""
   # -- directory to look for plugins
   pluginsDir: "/headlamp/plugins"
+  watchPlugins: true
   # Extra arguments that can be given to the container. See charts/headlamp/README.md for more information.
   extraArgs: []
 
@@ -226,6 +227,38 @@ tolerations: []
 
 # -- Affinity settings for pod assignment
 affinity: {}
+
+# Test values for headlamp with plugins enabled
+plugins:
+  # -- Enable plugin management
+  enabled: true
+  # -- Plugin configuration file name
+  configFile: "plugin.yml"
+  # -- Plugin configuration content in YAML format. This is required if plugins.enabled is true.
+  # Example:
+  configContent: |
+    name: headlamp-plugin-manager
+    version: 1.0.0
+    main: index.js
+    api: v1
+    plugins:
+      - name: test-app-catalog
+        source: https://artifacthub.io/packages/headlamp/test-123/appcatalog_headlamp_plugin
+        version: 0.0.3
+  # configContent: ""
+  # -- Plugin sidecar configuration
+  sidecar:
+    # -- Base node image to use
+    baseImage: node:lts-alpine
+    # -- Headlamp plugin package version to install
+    version: latest
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1536Mi"
+      limits:
+        cpu: "500m"
+        memory: "1536Mi"
 
 # -- Additional Kubernetes manifests to be deployed. Include the manifest as nested YAML.
 extraManifests: []

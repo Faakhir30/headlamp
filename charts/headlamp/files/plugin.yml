@@ -1,0 +1,16 @@
+name: headlamp-plugin-manager
+version: 1.0.0
+main: index.js
+api: v1
+
+plugins:
+  - name: test-app-catalog
+    source: https://artifacthub.io/packages/headlamp/test-123/appcatalog_headlamp_plugin
+    version: 0.0.3
+  - name: invalid-plugin
+    source: https://artifacthub.io/packages/headlamp/test-123/invalid-plugin
+    version: 0.0.2
+
+installOptions:
+  parallel: true
+  maxConcurrent: 2
