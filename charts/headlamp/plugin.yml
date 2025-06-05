@@ -1,0 +1,10 @@
+plugins:
+  - name: test-app-catalog
+    source: https://artifacthub.io/packages/headlamp/test-123/appcatalog_headlamp_plugin
+    version: 0.0.3
+  - name: change-logo
+    source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_example_change_logo
+    version: 0.0.1-1
+installOptions:
+  parallel: true
+  maxConcurrent: 2
